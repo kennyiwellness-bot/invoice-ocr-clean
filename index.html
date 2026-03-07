@@ -66,7 +66,25 @@
     .pill{display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:12px;color:var(--muted);margin-left:8px}
     @media (max-width:980px){.grid{grid-template-columns:1fr}.right{height:auto;min-height:0}.splitter{display:none}.pane{height:auto}table{min-width:860px}}
   </style>
-  <!-- PDF.js will be loaded on-demand -->
+  <script type="module">
+    let __pdfjsReady = null;
+    window.__ensurePdfJs = async function(){
+      if (globalThis.pdfjsLib && globalThis.pdfjsLib.getDocument) return globalThis.pdfjsLib;
+      if (!__pdfjsReady) {
+        __pdfjsReady = (async () => {
+          const mod = await import("/pdfjs/pdf.min.mjs");
+          const lib = mod?.getDocument ? mod : (globalThis.pdfjsLib || mod?.default || mod);
+          globalThis.pdfjsLib = lib;
+          if (!globalThis.pdfjsLib || !globalThis.pdfjsLib.getDocument) {
+            throw new Error("PDF.js loaded but pdfjsLib is missing");
+          }
+          try { globalThis.pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs"; } catch(e) {}
+          return globalThis.pdfjsLib;
+        })();
+      }
+      return __pdfjsReady;
+    };
+  </script>
 </head>
 <body>
 <header>
@@ -172,39 +190,11 @@ const MAX_FILES=20;
 // Note: Cloudflare Pages Functions cannot easily rasterize PDFs; we do it in-browser via PDF.js.
 // We cap expanded pages to MAX_FILES to match UI constraints.
 function isPDF(file){ return (file && (file.type==="application/pdf" || (file.name||"").toLowerCase().endsWith(".pdf"))); }
-
-  // --- Ensure PDF.js (loaded on-demand) ---
-  // We use the ESM build stored in /pdfjs (pdf.min.mjs + pdf.worker.min.mjs)
-  // and expose it as global `pdfjsLib` to keep the rest of the code unchanged.
-  let __pdfjsReady = null;
-  async function __ensurePdfJs() {
-    if (globalThis.pdfjsLib && globalThis.pdfjsLib.getDocument) return globalThis.pdfjsLib;
-    if (!__pdfjsReady) {
-      __pdfjsReady = (async () => {
-        const mod = await import("./pdfjs/pdf.min.mjs");
-        // NOTE: this pdf.min.mjs sets globalThis.pdfjsLib itself (UMD-style in .mjs). Do NOT overwrite with module namespace.
-        if (!globalThis.pdfjsLib || !globalThis.pdfjsLib.getDocument) {
-          // fallback: some builds export on module namespace
-          globalThis.pdfjsLib = mod?.getDocument ? mod : globalThis.pdfjsLib;
-        }
-        try {
-          globalThis.pdfjsLib.GlobalWorkerOptions.workerSrc = "./pdfjs/pdf.worker.min.mjs";
-        } catch (e) {
-          // ignore
-        }
-        return globalThis.pdfjsLib;
-      })();
-    }
-    return __pdfjsReady;
-  }
-
-
-
 async function pdfToImages(pdfFile){
   if(typeof __ensurePdfJs==="function"){ await __ensurePdfJs(); }
   if(typeof pdfjsLib==="undefined"){ throw new Error("PDF.js 未載入，無法預覽/抽取 PDF。"); }
   // Configure worker
-  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js"; }catch(e){}
+  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs"; }catch(e){}
   const ab = await pdfFile.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:ab}).promise;
   const out = [];
@@ -246,8 +236,42 @@ const state = {
   accountCatalog: null,
 };
 
+async function loadAccountCatalog(){
+  try{
+    const r = await fetch("/account_codes.json", {cache:"no-store"});
+    if(!r.ok) throw new Error("account_codes.json not found");
+    const list = await r.json();
+    if(!Array.isArray(list) || !list.length) throw new Error("account_codes.json empty");
+    // normalize to {code,type,label}
+    const cat = { byCode:{}, byType:{}, options:[] };
+    const add=(code,type)=>{
+      const c=String(code||"").trim(), t=String(type||"").trim();
+      if(!c || !t) return;
+      cat.byCode[c]={code:c,type:t};
+      cat.byType[t]={code:c,type:t};
+      cat.options.push({code:c,type:t,label:c}); // dropdown only code
+    };
+    for(const o of list){
+      add(o.code ?? o.account_code, o.type ?? o.account_type);
+    }
+    // unique + sort
+    const seen=new Set();
+    cat.options=cat.options.filter(o=>{const k=o.code+"||"+o.type; if(seen.has(k)) return false; seen.add(k); return true;})
+      .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
+    state.accountCatalog = cat;
+    // refresh table selects if already rendered
+    if(typeof renderTable === "function") renderTable();
+    setStatus("✅ Account Code 已載入（account_codes.json）","ok");
+    return true;
+  }catch(e){
+    console.warn("loadAccountCatalog failed", e);
+    return false;
+  }
+}
+
 const el=(id)=>document.getElementById(id);
 function setStatus(msg,kind=""){const b=el("statusBox");b.textContent=msg;b.className="status"+(kind?" "+kind:"");}
+loadAccountCatalog();
 function setProgress(p){el("progressBar").style.width=`${Math.max(0,Math.min(100,p))}%`;}
 function disableActions(d){["btnExtract","btnExport","btnAddRow","invoiceType","expectedCount","fileInput"].forEach(x=>{const n=el(x); if(n) n.disabled=d;});}
 
@@ -384,6 +408,34 @@ function buildAccountCatalogFromResponse(resp){
     .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
   return cat;
 }
+function normalizeForMatch(v){
+  return String(v || "").toLowerCase().replace(/[^a-z0-9一-鿿]+/g," ").replace(/\s+/g," ").trim();
+}
+function inferAccountTypeFromRow(row){
+  if(!state.accountCatalog?.options?.length) return "";
+  const hay = normalizeForMatch([
+    row.filename, row.category, row.item, row.payee, row.company_name,
+    row.invoice_no, row.note, row.description
+  ].join(" "));
+  if(!hay) return "";
+  const has = (...words) => words.some(w => hay.includes(w));
+  const exactType = state.accountCatalog.options.find(o => normalizeForMatch(o.type) && hay.includes(normalizeForMatch(o.type)));
+  if(exactType) return exactType.type;
+  if(has("entertainment","lunch","dinner","restaurant","cafe","coffee","meal","buffet","banquet","酒樓","餐廳","飲食")) return "Entertainment";
+  if(has("parking","car park","carpark","tunnel","fuel","petrol","diesel","vehicle","octopus parking","parking fee","停車","泊車","油費")) return "Motor vehicle expenses";
+  if(has("taxi","uber","mtr","bus","train","ferry","travel","travelling","trip","local travel","交通","車費","的士","旅遊")) return "Travelling - local";
+  if(has("medical","clinic","hospital","pharmacy","doctor","dr ","診所","醫療")) return "Medical Expenses";
+  if(has("printing","stationery","paper","ink","toner","label","poster","印刷","文具")) return "Printing & stationery";
+  if(has("repair","maintenance","fix","service fee","維修","保養")) return "Repair and maintenance";
+  if(has("insurance","policy","premium","保險")) return "Insurance";
+  if(has("computer","software","laptop","monitor","keyboard","mouse","printer","電腦","軟件")) return "Computer expenses";
+  if(has("magazine","newspaper","news","報紙","雜誌")) return "Newspaper & magazines";
+  if(has("courier","dhl","fedex","sf express","順豐")) return "COS - Courier";
+  if(has("postage","stamp","郵費","郵票")) return "COS - Postage";
+  if(has("staff welfare","team lunch","birthday","staff","員工福利")) return "Staff welfare";
+  if(has("lawyer","legal","professional fee","accounting","audit","顧問費","律師")) return "Legal and professional fees";
+  return "";
+}
 function ensureAccountAutoFill(row){
   if(!state.accountCatalog) return row;
   row.account_code=row.account_code??row.accountCode??row.code??"";
@@ -393,6 +445,13 @@ function ensureAccountAutoFill(row){
   }
   if(row.account_type && !row.account_code){
     const m=state.accountCatalog.byType[String(row.account_type).trim()]; if(m) row.account_code=m.code;
+  }
+  if(!row.account_code && !row.account_type){
+    const inferredType = inferAccountTypeFromRow(row);
+    if(inferredType && state.accountCatalog.byType[inferredType]){
+      row.account_type = inferredType;
+      row.account_code = state.accountCatalog.byType[inferredType].code;
+    }
   }
   if(row.account_code && row.account_type){
     const m=state.accountCatalog.byCode[String(row.account_code).trim()]; if(m) row.account_type=m.type;
