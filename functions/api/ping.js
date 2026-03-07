@@ -1,0 +1,1 @@
+export async function onRequestGet(){return new Response("ok",{status:200,headers:{"content-type":"text/plain","cache-control":"no-store","access-control-allow-origin":"*"}})}
