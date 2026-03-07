@@ -229,24 +229,6 @@ async function expandPickedFiles(picked){
   }
   return expanded.slice(0,MAX_FILES);
 }
-const DEFAULT_ACCOUNT_CODES = [
-  { code: "11100", type: "Fixed Assets- Office equipment" },
-  { code: "55230", type: "COS - Courier" },
-  { code: "55240", type: "COS - Postage" },
-  { code: "71150", type: "Computer expenses" },
-  { code: "71190", type: "Entertainment" },
-  { code: "71200", type: "Insurance" },
-  { code: "71210", type: "Legal and professional fees" },
-  { code: "71230", type: "Motor vehicle expenses" },
-  { code: "71240", type: "Newspaper & magazines" },
-  { code: "71260", type: "Printing & stationery" },
-  { code: "71270", type: "Repair and maintenance" },
-  { code: "71330", type: "Staff welfare" },
-  { code: "71340", type: "Sundry expenses" },
-  { code: "71460", type: "Medical Expenses" },
-  { code: "72230", type: "Travelling - local" }
-];
-
 const state = {
   files: [],
   activeIndex: -1,
@@ -254,40 +236,36 @@ const state = {
   accountCatalog: null,
 };
 
-function buildCatalogFromList(list){
-  const cat = { byCode:{}, byType:{}, options:[] };
-  const add=(code,type)=>{
-    const c=String(code||"").trim(), t=String(type||"").trim();
-    if(!c || !t) return;
-    cat.byCode[c]={code:c,type:t};
-    cat.byType[t]={code:c,type:t};
-    cat.options.push({code:c,type:t,label:c});
-  };
-  for(const o of (Array.isArray(list) ? list : [])){
-    add(o.code ?? o.account_code, o.type ?? o.account_type);
-  }
-  const seen=new Set();
-  cat.options=cat.options.filter(o=>{const k=o.code+"||"+o.type; if(seen.has(k)) return false; seen.add(k); return true;})
-    .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
-  return cat;
-}
-
 async function loadAccountCatalog(){
   try{
     const r = await fetch("/account_codes.json", {cache:"no-store"});
     if(!r.ok) throw new Error("account_codes.json not found");
     const list = await r.json();
     if(!Array.isArray(list) || !list.length) throw new Error("account_codes.json empty");
-    state.accountCatalog = buildCatalogFromList(list);
+    // normalize to {code,type,label}
+    const cat = { byCode:{}, byType:{}, options:[] };
+    const add=(code,type)=>{
+      const c=String(code||"").trim(), t=String(type||"").trim();
+      if(!c || !t) return;
+      cat.byCode[c]={code:c,type:t};
+      cat.byType[t]={code:c,type:t};
+      cat.options.push({code:c,type:t,label:c}); // dropdown only code
+    };
+    for(const o of list){
+      add(o.code ?? o.account_code, o.type ?? o.account_type);
+    }
+    // unique + sort
+    const seen=new Set();
+    cat.options=cat.options.filter(o=>{const k=o.code+"||"+o.type; if(seen.has(k)) return false; seen.add(k); return true;})
+      .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
+    state.accountCatalog = cat;
+    // refresh table selects if already rendered
     if(typeof renderTable === "function") renderTable();
     setStatus("✅ Account Code 已載入（account_codes.json）","ok");
     return true;
   }catch(e){
-    console.warn("loadAccountCatalog failed, fallback to built-in catalog", e);
-    state.accountCatalog = buildCatalogFromList(DEFAULT_ACCOUNT_CODES);
-    if(typeof renderTable === "function") renderTable();
-    setStatus("⚠️ account_codes.json 讀取失敗，已改用內建 Account Code 清單。","ok");
-    return true;
+    console.warn("loadAccountCatalog failed", e);
+    return false;
   }
 }
 
@@ -395,6 +373,34 @@ function rebuildHeader(){
 }
 
 /* Account mapping helpers */
+function normalizeForMatch(s){
+  return String(s||"").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g," ").trim();
+}
+function inferAccountType(row){
+  if(!state.accountCatalog?.options?.length) return "";
+  const hay = normalizeForMatch([
+    row.company_name,row.category,row.item,row.payee,row.filename,row.invoice_no
+  ].filter(Boolean).join(" "));
+  if(!hay) return "";
+  const rules = [
+    { re:/\bparking\b|car park|urban parking|temple mall|hkstp|ping shek|octopus parking|停車|泊車/, type:"Motor vehicle expenses" },
+    { re:/\btaxi\b|\buber\b|\bdidi\b|cab|transport|travel|travelling|local travel|mtr|train|bus|ferry|trip|交通|的士|出差|車費|旅遊/, type:"Travelling - local" },
+    { re:/restaurant|lunch|dinner|breakfast|coffee|cafe|food|meal|entertainment|la serene|jiang nan|鼎聖|茶樓|酒樓|餐|飯|宴|咖啡|鮮蝦|golf/, type:"Entertainment" },
+    { re:/medical|clinic|doctor|hospital|pharmacy|藥|醫|診所/, type:"Medical Expenses" },
+    { re:/print|printing|stationery|文具|印刷/, type:"Printing & stationery" },
+    { re:/repair|maintenance|維修|保養/, type:"Repair and maintenance" },
+    { re:/insurance|保險/, type:"Insurance" },
+    { re:/courier|delivery|速遞|快遞/, type:"COS - Courier" },
+    { re:/postage|mail|郵費|郵寄/, type:"COS - Postage" },
+    { re:/computer|software|subscription|saas|cloud|hosting|domain|ai|chatgpt|openai|gemini|電腦|軟件/, type:"Computer expenses" },
+  ];
+  for(const rule of rules){
+    if(rule.re.test(hay) && state.accountCatalog.byType[rule.type]) return rule.type;
+  }
+  // fallback exact contains type label
+  const exactType = state.accountCatalog.options.find(o => normalizeForMatch(o.type) && hay.includes(normalizeForMatch(o.type)));
+  return exactType ? exactType.type : "";
+}
 function buildAccountCatalogFromResponse(resp){
   const cat={byCode:{},byType:{},options:[]};
   const add=(code,type)=>{
@@ -440,14 +446,13 @@ function inferAccountTypeFromRow(row){
     row.invoice_no, row.note, row.description
   ].join(" "));
   if(!hay) return "";
-  const has = (...words) => words.some(w => hay.includes(normalizeForMatch(w)));
+  const has = (...words) => words.some(w => hay.includes(w));
   const exactType = state.accountCatalog.options.find(o => normalizeForMatch(o.type) && hay.includes(normalizeForMatch(o.type)));
   if(exactType) return exactType.type;
-
-  if(has("parking","car park","carpark","parking fee","octopus parking","urban parking","temple mall","ping shek","hkstp inno","tunnel","fuel","petrol","diesel","vehicle","停車","泊車","油費")) return "Motor vehicle expenses";
-  if(has("restaurant","lunch","dinner","breakfast","buffet","banquet","meal","food","beverage","cafe","coffee","la serene","jiang nan","鼎聖茶樓","餐廳","酒樓","飲食","午餐","晚餐")) return "Entertainment";
+  if(has("entertainment","lunch","dinner","restaurant","cafe","coffee","meal","buffet","banquet","酒樓","餐廳","飲食")) return "Entertainment";
+  if(has("parking","car park","carpark","tunnel","fuel","petrol","diesel","vehicle","octopus parking","parking fee","停車","泊車","油費")) return "Motor vehicle expenses";
   if(has("taxi","uber","mtr","bus","train","ferry","travel","travelling","trip","local travel","交通","車費","的士","旅遊")) return "Travelling - local";
-  if(has("medical","clinic","hospital","pharmacy","doctor","診所","醫療")) return "Medical Expenses";
+  if(has("medical","clinic","hospital","pharmacy","doctor","dr ","診所","醫療")) return "Medical Expenses";
   if(has("printing","stationery","paper","ink","toner","label","poster","印刷","文具")) return "Printing & stationery";
   if(has("repair","maintenance","fix","service fee","維修","保養")) return "Repair and maintenance";
   if(has("insurance","policy","premium","保險")) return "Insurance";
@@ -457,7 +462,7 @@ function inferAccountTypeFromRow(row){
   if(has("postage","stamp","郵費","郵票")) return "COS - Postage";
   if(has("staff welfare","team lunch","birthday","staff","員工福利")) return "Staff welfare";
   if(has("lawyer","legal","professional fee","accounting","audit","顧問費","律師")) return "Legal and professional fees";
-  return "Sundry expenses";
+  return "";
 }
 function ensureAccountAutoFill(row){
   if(!state.accountCatalog) return row;
@@ -470,7 +475,7 @@ function ensureAccountAutoFill(row){
     const m=state.accountCatalog.byType[String(row.account_type).trim()]; if(m) row.account_code=m.code;
   }
   if(!row.account_code && !row.account_type){
-    const inferredType = inferAccountTypeFromRow(row);
+    const inferredType = inferAccountType(row);
     if(inferredType && state.accountCatalog.byType[inferredType]){
       row.account_type = inferredType;
       row.account_code = state.accountCatalog.byType[inferredType].code;
@@ -610,8 +615,8 @@ el("btnExtract").addEventListener("click",async()=>{
     if(expected>0) fd.append("expectedCount", String(expected));
 
     const resp=await postWithRetries(API_ENDPOINT,fd,2);
-    state.accountCatalog=null;
-    const cat=buildAccountCatalogFromResponse(resp); if(cat) state.accountCatalog=cat;
+    const cat=buildAccountCatalogFromResponse(resp);
+    if(cat) state.accountCatalog=cat;
 
     let r=resp?.rows; if(!r && resp?.data?.rows) r=resp.data.rows;
     if(!r && typeof resp?.text==="string"){try{const p=JSON.parse(resp.text); if(p?.rows) r=p.rows;}catch(e){}}
