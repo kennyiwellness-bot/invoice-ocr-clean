@@ -257,8 +257,66 @@ const state = {
   accountCatalog: null,
 };
 
+
+async function loadAccountCatalog(){
+  try{
+    const r = await fetch("/account_codes.json", {cache:"no-store"});
+    if(!r.ok) throw new Error("account_codes.json not found");
+    const list = await r.json();
+    if(!Array.isArray(list) || !list.length) throw new Error("account_codes.json empty");
+    const cat={byCode:{},byType:{},options:[]};
+    const add=(code,type)=>{
+      const c=String(code||"").trim(), t=String(type||"").trim();
+      if(!c || !t) return;
+      cat.byCode[c]={code:c,type:t};
+      cat.byType[t]={code:c,type:t};
+      cat.options.push({code:c,type:t,label:c});
+    };
+    for(const o of list) add(o.code ?? o.account_code, o.type ?? o.account_type);
+    const seen=new Set();
+    cat.options=cat.options.filter(o=>{const k=o.code+"||"+o.type; if(seen.has(k)) return false; seen.add(k); return true;})
+      .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
+    state.accountCatalog = cat;
+    if(typeof renderTable === "function") renderTable();
+    return true;
+  }catch(e){
+    console.warn("loadAccountCatalog failed", e);
+    return false;
+  }
+}
+
+function normalizeForMatch(s){
+  return String(s||"").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g," ").trim();
+}
+function inferAccountType(row){
+  if(!state.accountCatalog?.options?.length) return "";
+  const hay = normalizeForMatch([
+    row.company_name,row.category,row.item,row.payee,row.filename,row.invoice_no
+  ].filter(Boolean).join(" "));
+  if(!hay) return "";
+  const rules = [
+    { re:/\bparking\b|car park|urban parking|temple mall|hkstp|ping shek|octopus parking|停車|泊車/, type:"Motor vehicle expenses" },
+    { re:/\btaxi\b|\buber\b|\bdidi\b|cab|transport|travel|travelling|local travel|mtr|train|bus|ferry|trip|交通|的士|出差|車費|旅遊/, type:"Travelling - local" },
+    { re:/restaurant|lunch|dinner|breakfast|coffee|cafe|food|meal|entertainment|la serene|jiang nan|鼎聖|茶樓|酒樓|餐|飯|宴|咖啡|鮮蝦|golf/, type:"Entertainment" },
+    { re:/medical|clinic|doctor|hospital|pharmacy|藥|醫|診所/, type:"Medical Expenses" },
+    { re:/print|printing|stationery|文具|印刷/, type:"Printing & stationery" },
+    { re:/repair|maintenance|維修|保養/, type:"Repair and maintenance" },
+    { re:/insurance|保險/, type:"Insurance" },
+    { re:/courier|delivery|速遞|快遞/, type:"COS - Courier" },
+    { re:/postage|mail|郵費|郵寄/, type:"COS - Postage" },
+    { re:/computer|software|subscription|saas|cloud|hosting|domain|ai|chatgpt|openai|gemini|電腦|軟件/, type:"Computer expenses" },
+    { re:/plant terrace|天堂鳥|波簾|花泥|雜植|plant terr|office expen|office admin/, type:"Staff welfare" },
+  ];
+  for(const rule of rules){
+    if(rule.re.test(hay) && state.accountCatalog.byType[rule.type]) return rule.type;
+  }
+  const exactType = state.accountCatalog.options.find(o => normalizeForMatch(o.type) && hay.includes(normalizeForMatch(o.type)));
+  return exactType ? exactType.type : "";
+}
+
 const el=(id)=>document.getElementById(id);
 function setStatus(msg,kind=""){const b=el("statusBox");b.textContent=msg;b.className="status"+(kind?" "+kind:"");}
+loadAccountCatalog();
 function setProgress(p){el("progressBar").style.width=`${Math.max(0,Math.min(100,p))}%`;}
 function disableActions(d){["btnExtract","btnExport","btnAddRow","invoiceType","expectedCount","fileInput"].forEach(x=>{const n=el(x); if(n) n.disabled=d;});}
 
@@ -399,11 +457,19 @@ function ensureAccountAutoFill(row){
   if(!state.accountCatalog) return row;
   row.account_code=row.account_code??row.accountCode??row.code??"";
   row.account_type=row.account_type??row.accountType??row.type??"";
+  if(row.is_total_row) return row;
   if(row.account_code && !row.account_type){
     const m=state.accountCatalog.byCode[String(row.account_code).trim()]; if(m) row.account_type=m.type;
   }
   if(row.account_type && !row.account_code){
     const m=state.accountCatalog.byType[String(row.account_type).trim()]; if(m) row.account_code=m.code;
+  }
+  if(!row.account_code && !row.account_type){
+    const inferredType = inferAccountType(row);
+    if(inferredType && state.accountCatalog.byType[inferredType]){
+      row.account_type = inferredType;
+      row.account_code = state.accountCatalog.byType[inferredType].code;
+    }
   }
   if(row.account_code && row.account_type){
     const m=state.accountCatalog.byCode[String(row.account_code).trim()]; if(m) row.account_type=m.type;
@@ -465,6 +531,52 @@ function normalizeRowsFromResponse(resp){
     }
   }
   return out;
+}
+
+
+function toNumberLike(v){
+  const s=String(v??"").replace(/[^0-9.\-]/g,"").trim();
+  const n=parseFloat(s);
+  return Number.isFinite(n)?n:null;
+}
+function formatMoneyLike(n){
+  if(n===null || n===undefined || n==="") return "";
+  const num=Number(n);
+  if(!Number.isFinite(num)) return String(n);
+  return (Math.round(num*100)/100).toString();
+}
+function collapseRowsForPettyCash(rows){
+  const arr = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if(!arr.length) return [];
+  const totalRow = arr.find(r=>r && r.is_total_row) || null;
+  const nonTotal = arr.filter(r=>r && !r.is_total_row);
+  const base = {...(nonTotal[0] || totalRow || arr[0] || {})};
+
+  let invoiceTotal = totalRow?.total_amount ?? "";
+  if(!invoiceTotal){
+    const nums = nonTotal.map(r=>toNumberLike(r.total_amount)).filter(v=>v!==null);
+    if(nums.length){
+      // if one row already looks like invoice total, use the max; otherwise use sum
+      const sum = nums.reduce((a,b)=>a+b,0);
+      const maxv = Math.max(...nums);
+      invoiceTotal = formatMoneyLike(nums.length > 1 ? (maxv >= sum*0.9 ? maxv : sum) : nums[0]);
+    }
+  }
+
+  const summary = normalizeOneRow({
+    ...base,
+    item: "",
+    qty: "",
+    unit_cost: "",
+    total_amount: invoiceTotal || base.total_amount || "",
+    is_total_row: false
+  });
+
+  // petty cash should be one invoice summary row only
+  summary.item = "";
+  summary.qty = "";
+  summary.unit_cost = "";
+  return [summary];
 }
 
 /* Render table */
@@ -602,10 +714,12 @@ el("btnExtract").addEventListener("click",async()=>{
     if(expected>0) fd.append("expectedCount", String(expected));
 
     const resp=await postWithRetries(API_ENDPOINT,fd,2);
-    state.accountCatalog=null;
-    const cat=buildAccountCatalogFromResponse(resp); if(cat) state.accountCatalog=cat;
+    const cat=buildAccountCatalogFromResponse(resp);
+    if(cat) state.accountCatalog=cat;
+    if(!state.accountCatalog) await loadAccountCatalog();
 
     state.rows = normalizeRowsFromResponse(resp);
+    if(invoiceType==="petty_cash") state.rows = collapseRowsForPettyCash(state.rows);
     renderTable(); setProgress(100);
 
     const got=state.rows.length;
