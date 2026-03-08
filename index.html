@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>iWellness Invoice OCR Demo（淺色日間版）</title>
+  <title>iWellness Invoice OCR</title>
   <style>
     :root{--bg:#f5f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e5e7eb;--orange:#f97316;--green:#16a34a;--shadow:0 10px 30px rgba(15,23,42,.08);--radius:18px;}
     *{box-sizing:border-box}
@@ -406,48 +406,55 @@ function ensureAccountAutoFill(row){
   return row;
 }
 
-function inferPettyCashItemName(rows){
-  const items = (rows||[]).map(r => String(r.item||"").trim()).filter(Boolean);
-  if(!items.length) return "";
-  const uniq = [...new Set(items)];
-  if(uniq.length===1) return uniq[0];
-  const hay = uniq.join(" ").toLowerCase();
-  if(/釘書機|原子筆|間尺|筆|文具|紙|label|標籤|打印紙|printer paper|stationery|stapler|pen|ruler/.test(hay)) return "文具";
-  if(/parking|泊車|停車|tunnel|隧道|octopus|的士|taxi|uber|mtr|交通/.test(hay)) return "交通";
-  if(/coffee|lunch|dinner|meal|餐|飯|茶|restaurant|cafe/.test(hay)) return "餐飲";
-  if(/plant|flower|花|泥|盆|園藝/.test(hay)) return "園藝用品";
-  return uniq.slice(0,3).join(" / ");
+
+function inferPettyCashSummaryItem(rows){
+  const items = [...new Set((rows||[]).map(r => String(r.item||"").trim()).filter(Boolean))];
+  if (!items.length) return "";
+  if (items.length === 1) return items[0];
+  const hay = items.join(' ').toLowerCase();
+  if (/(stapler|pen|pencil|ruler|paper|ink|toner|label|stationery|文具|原子筆|間尺|釘書機|紙)/.test(hay)) return '文具';
+  if (/(parking|taxi|uber|mtr|bus|travel|travelling|交通|泊車|停車|車費|的士)/.test(hay)) return '交通';
+  if (/(coffee|lunch|dinner|meal|restaurant|cafe|餐|飯|茶|飲食)/.test(hay)) return '餐飲';
+  if (/(plant|flower|pot|soil|園藝|花|花泥|盆|雜植)/.test(hay)) return '園藝用品';
+  if (/(repair|maintenance|fix|維修|保養)/.test(hay)) return '維修保養';
+  return items.slice(0,3).join(' / ');
 }
 
 function summarizeRowsForPettyCash(rows){
   if(!Array.isArray(rows) || !rows.length) return [];
   const groups = new Map();
-  for(const r0 of rows){
-    const r = {...r0};
+  for(const row of rows){
+    const r = {...row};
     const key = [
-      String(r.filename||"").trim(),
-      String(r.invoice_no||"").trim(),
-      String(r.company_name||"").trim(),
-      String(r.invoice_date||"").trim()
-    ].join("||");
+      String(r.filename||'').trim(),
+      String(r.invoice_no||'').trim(),
+      String(r.company_name||'').trim(),
+      String(r.invoice_date||'').trim()
+    ].join('||');
     if(!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
-  const out=[];
-  for(const groupRows of groups.values()){
-    const first = groupRows[0] || {};
-    let total = "";
-    const totals = groupRows.map(r => String(r.total_amount||"").replace(/,/g,"").trim())
-      .filter(Boolean).map(v => ({raw:v, num:parseFloat(v)})).filter(v => !Number.isNaN(v.num));
-    if(totals.length){ totals.sort((a,b)=>b.num-a.num); total = String(totals[0].raw); }
-    else total = String(first.total_amount||"").trim();
-    const merged = ensureAccountAutoFill({
+  const out = [];
+  for(const rs of groups.values()){
+    const first = {...rs[0]};
+    const totals = rs.map(r => String(r.total_amount||'').replace(/,/g,'').trim())
+      .filter(Boolean)
+      .map(v => ({raw:v, num: parseFloat(v)}))
+      .filter(x => !Number.isNaN(x.num));
+    let total = String(first.total_amount||'').trim();
+    if(totals.length){
+      totals.sort((a,b)=>b.num-a.num);
+      total = totals[0].raw;
+    }
+    const merged = {
       ...first,
-      item: inferPettyCashItemName(groupRows),
-      payee: first.payee || "",
-      total_amount: total
-    });
-    out.push(merged);
+      item: inferPettyCashSummaryItem(rs),
+      payee: first.payee || '',
+      qty: '',
+      unit_cost: '',
+      total_amount: total,
+    };
+    out.push(ensureAccountAutoFill(merged));
   }
   return out;
 }
@@ -581,13 +588,19 @@ el("btnExtract").addEventListener("click",async()=>{
 
     const resp=await postWithRetries(API_ENDPOINT,fd,2);
     const cat=buildAccountCatalogFromResponse(resp);
-    if(cat) state.accountCatalog=cat;
-    else if(!state.accountCatalog){ try{ await loadAccountCatalog(); }catch(e){} }
+    if(cat) {
+      state.accountCatalog = cat;
+    } else if(!state.accountCatalog) {
+      await loadAccountCatalog();
+    }
 
     let r=resp?.rows; if(!r && resp?.data?.rows) r=resp.data.rows;
     if(!r && typeof resp?.text==="string"){try{const p=JSON.parse(resp.text); if(p?.rows) r=p.rows;}catch(e){}}
     state.rows = Array.isArray(r) ? r.map(x=>ensureAccountAutoFill({...x})) : [];
-    if(invoiceType === "petty_cash") state.rows = summarizeRowsForPettyCash(state.rows).map(x=>ensureAccountAutoFill({...x}));
+    if(invoiceType === 'petty_cash'){
+      state.rows = summarizeRowsForPettyCash(state.rows);
+    }
+    state.rows = state.rows.map(x=>ensureAccountAutoFill({...x}));
     renderTable(); setProgress(100);
 
     const got=state.rows.length;
