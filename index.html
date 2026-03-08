@@ -533,6 +533,52 @@ function normalizeRowsFromResponse(resp){
   return out;
 }
 
+
+function toNumberLike(v){
+  const s=String(v??"").replace(/[^0-9.\-]/g,"").trim();
+  const n=parseFloat(s);
+  return Number.isFinite(n)?n:null;
+}
+function formatMoneyLike(n){
+  if(n===null || n===undefined || n==="") return "";
+  const num=Number(n);
+  if(!Number.isFinite(num)) return String(n);
+  return (Math.round(num*100)/100).toString();
+}
+function collapseRowsForPettyCash(rows){
+  const arr = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if(!arr.length) return [];
+  const totalRow = arr.find(r=>r && r.is_total_row) || null;
+  const nonTotal = arr.filter(r=>r && !r.is_total_row);
+  const base = {...(nonTotal[0] || totalRow || arr[0] || {})};
+
+  let invoiceTotal = totalRow?.total_amount ?? "";
+  if(!invoiceTotal){
+    const nums = nonTotal.map(r=>toNumberLike(r.total_amount)).filter(v=>v!==null);
+    if(nums.length){
+      // if one row already looks like invoice total, use the max; otherwise use sum
+      const sum = nums.reduce((a,b)=>a+b,0);
+      const maxv = Math.max(...nums);
+      invoiceTotal = formatMoneyLike(nums.length > 1 ? (maxv >= sum*0.9 ? maxv : sum) : nums[0]);
+    }
+  }
+
+  const summary = normalizeOneRow({
+    ...base,
+    item: "",
+    qty: "",
+    unit_cost: "",
+    total_amount: invoiceTotal || base.total_amount || "",
+    is_total_row: false
+  });
+
+  // petty cash should be one invoice summary row only
+  summary.item = "";
+  summary.qty = "";
+  summary.unit_cost = "";
+  return [summary];
+}
+
 /* Render table */
 function renderTable(){
   rebuildHeader();
@@ -673,6 +719,7 @@ el("btnExtract").addEventListener("click",async()=>{
     if(!state.accountCatalog) await loadAccountCatalog();
 
     state.rows = normalizeRowsFromResponse(resp);
+    if(invoiceType==="petty_cash") state.rows = collapseRowsForPettyCash(state.rows);
     renderTable(); setProgress(100);
 
     const got=state.rows.length;
