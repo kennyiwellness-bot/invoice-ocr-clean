@@ -65,25 +65,46 @@
     .cell-input,.cell-select{width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:12px;font-size:13px;background:#fff}
     .pill{display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:12px;color:var(--muted);margin-left:8px}
     @media (max-width:980px){.grid{grid-template-columns:1fr}.right{height:auto;min-height:0}.splitter{display:none}.pane{height:auto}table{min-width:860px}}
-  </style>
-  <script type="module">
-    let __pdfjsReady = null;
-    window.__ensurePdfJs = async function(){
-      if (globalThis.pdfjsLib && globalThis.pdfjsLib.getDocument) return globalThis.pdfjsLib;
-      if (!__pdfjsReady) {
-        __pdfjsReady = (async () => {
-          const mod = await import("/pdfjs/pdf.min.mjs");
-          const lib = mod?.getDocument ? mod : (globalThis.pdfjsLib || mod?.default || mod);
-          globalThis.pdfjsLib = lib;
-          if (!globalThis.pdfjsLib || !globalThis.pdfjsLib.getDocument) {
-            throw new Error("PDF.js loaded but pdfjsLib is missing");
-          }
-          try { globalThis.pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs"; } catch(e) {}
-          return globalThis.pdfjsLib;
-        })();
+  
+    .total-row td{background:#fff7ed}
+    .total-row .cell-input{font-weight:800;background:#fff7ed}
+    .total-row .cell-select{font-weight:700;background:#fff7ed}
+
+</style>
+  <!-- PDF.js (local-first, CDN fallback) -->
+  <script>
+    (function(){
+      const LOCAL_JS = '/pdfjs/pdf.min.js';
+      const LOCAL_WORKER = '/pdfjs/pdf.worker.min.js';
+      const CDN_JS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js';
+      const CDN_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
+
+      function loadScript(src){
+        return new Promise((resolve,reject)=>{
+          const s=document.createElement('script');
+          s.src=src; s.crossOrigin='anonymous';
+          s.onload=()=>resolve(src);
+          s.onerror=()=>reject(new Error('Failed to load '+src));
+          document.head.appendChild(s);
+        });
       }
-      return __pdfjsReady;
-    };
+
+      window.__ensurePdfJs = async function(){
+        if(window.pdfjsLib) return {js:'already', worker:(pdfjsLib.GlobalWorkerOptions && pdfjsLib.GlobalWorkerOptions.workerSrc) || ''};
+        try{
+          await loadScript(LOCAL_JS);
+          if(window.pdfjsLib){
+            try{ pdfjsLib.GlobalWorkerOptions.workerSrc = LOCAL_WORKER; }catch(e){}
+            return {js:LOCAL_JS, worker:LOCAL_WORKER};
+          }
+        }catch(e){}
+        // fallback CDN
+        await loadScript(CDN_JS);
+        if(!window.pdfjsLib) throw new Error('PDF.js loaded but pdfjsLib is missing');
+        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = CDN_WORKER; }catch(e){}
+        return {js:CDN_JS, worker:CDN_WORKER};
+      };
+    })();
   </script>
 </head>
 <body>
@@ -194,7 +215,7 @@ async function pdfToImages(pdfFile){
   if(typeof __ensurePdfJs==="function"){ await __ensurePdfJs(); }
   if(typeof pdfjsLib==="undefined"){ throw new Error("PDF.js 未載入，無法預覽/抽取 PDF。"); }
   // Configure worker
-  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs"; }catch(e){}
+  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js"; }catch(e){}
   const ab = await pdfFile.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:ab}).promise;
   const out = [];
@@ -236,42 +257,8 @@ const state = {
   accountCatalog: null,
 };
 
-async function loadAccountCatalog(){
-  try{
-    const r = await fetch("/account_codes.json", {cache:"no-store"});
-    if(!r.ok) throw new Error("account_codes.json not found");
-    const list = await r.json();
-    if(!Array.isArray(list) || !list.length) throw new Error("account_codes.json empty");
-    // normalize to {code,type,label}
-    const cat = { byCode:{}, byType:{}, options:[] };
-    const add=(code,type)=>{
-      const c=String(code||"").trim(), t=String(type||"").trim();
-      if(!c || !t) return;
-      cat.byCode[c]={code:c,type:t};
-      cat.byType[t]={code:c,type:t};
-      cat.options.push({code:c,type:t,label:c}); // dropdown only code
-    };
-    for(const o of list){
-      add(o.code ?? o.account_code, o.type ?? o.account_type);
-    }
-    // unique + sort
-    const seen=new Set();
-    cat.options=cat.options.filter(o=>{const k=o.code+"||"+o.type; if(seen.has(k)) return false; seen.add(k); return true;})
-      .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
-    state.accountCatalog = cat;
-    // refresh table selects if already rendered
-    if(typeof renderTable === "function") renderTable();
-    setStatus("✅ Account Code 已載入（account_codes.json）","ok");
-    return true;
-  }catch(e){
-    console.warn("loadAccountCatalog failed", e);
-    return false;
-  }
-}
-
 const el=(id)=>document.getElementById(id);
 function setStatus(msg,kind=""){const b=el("statusBox");b.textContent=msg;b.className="status"+(kind?" "+kind:"");}
-loadAccountCatalog();
 function setProgress(p){el("progressBar").style.width=`${Math.max(0,Math.min(100,p))}%`;}
 function disableActions(d){["btnExtract","btnExport","btnAddRow","invoiceType","expectedCount","fileInput"].forEach(x=>{const n=el(x); if(n) n.disabled=d;});}
 
@@ -373,34 +360,6 @@ function rebuildHeader(){
 }
 
 /* Account mapping helpers */
-function normalizeForMatch(s){
-  return String(s||"").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g," ").trim();
-}
-function inferAccountType(row){
-  if(!state.accountCatalog?.options?.length) return "";
-  const hay = normalizeForMatch([
-    row.company_name,row.category,row.item,row.payee,row.filename,row.invoice_no
-  ].filter(Boolean).join(" "));
-  if(!hay) return "";
-  const rules = [
-    { re:/\bparking\b|car park|urban parking|temple mall|hkstp|ping shek|octopus parking|停車|泊車/, type:"Motor vehicle expenses" },
-    { re:/\btaxi\b|\buber\b|\bdidi\b|cab|transport|travel|travelling|local travel|mtr|train|bus|ferry|trip|交通|的士|出差|車費|旅遊/, type:"Travelling - local" },
-    { re:/restaurant|lunch|dinner|breakfast|coffee|cafe|food|meal|entertainment|la serene|jiang nan|鼎聖|茶樓|酒樓|餐|飯|宴|咖啡|鮮蝦|golf/, type:"Entertainment" },
-    { re:/medical|clinic|doctor|hospital|pharmacy|藥|醫|診所/, type:"Medical Expenses" },
-    { re:/print|printing|stationery|文具|印刷/, type:"Printing & stationery" },
-    { re:/repair|maintenance|維修|保養/, type:"Repair and maintenance" },
-    { re:/insurance|保險/, type:"Insurance" },
-    { re:/courier|delivery|速遞|快遞/, type:"COS - Courier" },
-    { re:/postage|mail|郵費|郵寄/, type:"COS - Postage" },
-    { re:/computer|software|subscription|saas|cloud|hosting|domain|ai|chatgpt|openai|gemini|電腦|軟件/, type:"Computer expenses" },
-  ];
-  for(const rule of rules){
-    if(rule.re.test(hay) && state.accountCatalog.byType[rule.type]) return rule.type;
-  }
-  // fallback exact contains type label
-  const exactType = state.accountCatalog.options.find(o => normalizeForMatch(o.type) && hay.includes(normalizeForMatch(o.type)));
-  return exactType ? exactType.type : "";
-}
 function buildAccountCatalogFromResponse(resp){
   const cat={byCode:{},byType:{},options:[]};
   const add=(code,type)=>{
@@ -436,34 +395,6 @@ function buildAccountCatalogFromResponse(resp){
     .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
   return cat;
 }
-function normalizeForMatch(v){
-  return String(v || "").toLowerCase().replace(/[^a-z0-9一-鿿]+/g," ").replace(/\s+/g," ").trim();
-}
-function inferAccountTypeFromRow(row){
-  if(!state.accountCatalog?.options?.length) return "";
-  const hay = normalizeForMatch([
-    row.filename, row.category, row.item, row.payee, row.company_name,
-    row.invoice_no, row.note, row.description
-  ].join(" "));
-  if(!hay) return "";
-  const has = (...words) => words.some(w => hay.includes(w));
-  const exactType = state.accountCatalog.options.find(o => normalizeForMatch(o.type) && hay.includes(normalizeForMatch(o.type)));
-  if(exactType) return exactType.type;
-  if(has("entertainment","lunch","dinner","restaurant","cafe","coffee","meal","buffet","banquet","酒樓","餐廳","飲食")) return "Entertainment";
-  if(has("parking","car park","carpark","tunnel","fuel","petrol","diesel","vehicle","octopus parking","parking fee","停車","泊車","油費")) return "Motor vehicle expenses";
-  if(has("taxi","uber","mtr","bus","train","ferry","travel","travelling","trip","local travel","交通","車費","的士","旅遊")) return "Travelling - local";
-  if(has("medical","clinic","hospital","pharmacy","doctor","dr ","診所","醫療")) return "Medical Expenses";
-  if(has("printing","stationery","paper","ink","toner","label","poster","印刷","文具")) return "Printing & stationery";
-  if(has("repair","maintenance","fix","service fee","維修","保養")) return "Repair and maintenance";
-  if(has("insurance","policy","premium","保險")) return "Insurance";
-  if(has("computer","software","laptop","monitor","keyboard","mouse","printer","電腦","軟件")) return "Computer expenses";
-  if(has("magazine","newspaper","news","報紙","雜誌")) return "Newspaper & magazines";
-  if(has("courier","dhl","fedex","sf express","順豐")) return "COS - Courier";
-  if(has("postage","stamp","郵費","郵票")) return "COS - Postage";
-  if(has("staff welfare","team lunch","birthday","staff","員工福利")) return "Staff welfare";
-  if(has("lawyer","legal","professional fee","accounting","audit","顧問費","律師")) return "Legal and professional fees";
-  return "";
-}
 function ensureAccountAutoFill(row){
   if(!state.accountCatalog) return row;
   row.account_code=row.account_code??row.accountCode??row.code??"";
@@ -474,26 +405,76 @@ function ensureAccountAutoFill(row){
   if(row.account_type && !row.account_code){
     const m=state.accountCatalog.byType[String(row.account_type).trim()]; if(m) row.account_code=m.code;
   }
-  if(!row.account_code && !row.account_type){
-    const inferredType = inferAccountType(row);
-    if(inferredType && state.accountCatalog.byType[inferredType]){
-      row.account_type = inferredType;
-      row.account_code = state.accountCatalog.byType[inferredType].code;
-    }
-  }
   if(row.account_code && row.account_type){
     const m=state.accountCatalog.byCode[String(row.account_code).trim()]; if(m) row.account_type=m.type;
   }
   return row;
 }
 
+function normalizeOneRow(raw, shared={}){
+  const row={...shared,...raw};
+  row.account_code=row.account_code??row.accountCode??row.code??"";
+  row.account_type=row.account_type??row.accountType??row.type??"";
+  row.invoice_date=row.invoice_date??row.date??shared.invoice_date??"";
+  row.invoice_no=row.invoice_no??row.invoiceNumber??shared.invoice_no??"";
+  row.company_name=row.company_name??row.vendor??row.supplier??shared.company_name??"";
+  row.category=row.category??shared.category??"";
+  row.item=row.item??row.description??row.name??"";
+  row.qty=row.qty??row.quantity??"";
+  row.unit_cost=row.unit_cost??row.unit_price??row.price??"";
+  row.payee=row.payee??shared.payee??"";
+  row.total_amount=row.total_amount??row.amount??row.line_total??row.total??"";
+  row.is_total_row=!!(row.is_total_row || row.row_kind==="invoice_total" || /^__?invoice[_ ]?total__?$/i.test(String(row.item||"")) || /^invoice total$/i.test(String(row.item||"")));
+  if(row.is_total_row){
+    row.item="Invoice Total";
+    row.qty="";
+    row.unit_cost="";
+    row.account_code="";
+    row.account_type="";
+  }
+  return ensureAccountAutoFill(row);
+}
+
+function normalizeRowsFromResponse(resp){
+  let r=resp?.rows; if(!r && resp?.data?.rows) r=resp.data.rows;
+  if(!r && typeof resp?.text==="string"){try{const p=JSON.parse(resp.text); if(p?.rows) r=p.rows;}catch(e){}}
+  if(!Array.isArray(r)) return [];
+  const out=[];
+  for(const entry of r){
+    const shared={
+      invoice_date: entry?.invoice_date??entry?.date??"",
+      invoice_no: entry?.invoice_no??entry?.invoiceNumber??"",
+      company_name: entry?.company_name??entry?.vendor??entry?.supplier??"",
+      category: entry?.category??"",
+      payee: entry?.payee??"",
+      account_code: entry?.account_code??entry?.accountCode??entry?.code??"",
+      account_type: entry?.account_type??entry?.accountType??entry?.type??""
+    };
+    const lines = Array.isArray(entry?.line_items) ? entry.line_items : Array.isArray(entry?.items) ? entry.items : null;
+    if(lines && lines.length){
+      for(const li of lines) out.push(normalizeOneRow(li, shared));
+      if(entry?.invoice_total || entry?.grand_total || entry?.total_amount){
+        out.push(normalizeOneRow({
+          item: 'Invoice Total',
+          total_amount: entry.invoice_total ?? entry.grand_total ?? entry.total_amount,
+          is_total_row: true
+        }, shared));
+      }
+    }else{
+      out.push(normalizeOneRow(entry, shared));
+    }
+  }
+  return out;
+}
+
 /* Render table */
 function renderTable(){
   rebuildHeader();
   const schema=getSchema(), tbody=el("tbody"); tbody.innerHTML="";
-  state.rows=state.rows.map(r=>ensureAccountAutoFill({...r}));
+  state.rows=state.rows.map(r=>normalizeOneRow({...r}));
   state.rows.forEach((r,idx)=>{
     const tr=document.createElement("tr");
+    if(r.is_total_row) tr.classList.add("total-row");
     schema.forEach(col=>{
       const td=document.createElement("td");
       if(col.type==="account_code"){
@@ -503,6 +484,7 @@ function renderTable(){
           for(const o of state.accountCatalog.options) sel.appendChild(new Option(o.label,o.code));
         }
         sel.value=r.account_code?String(r.account_code).trim():"";
+        if(r.is_total_row) sel.disabled=true;
         sel.addEventListener("change",()=>{
           const code=sel.value; state.rows[idx].account_code=code;
           if(state.accountCatalog?.byCode?.[code]){state.rows[idx].account_type=state.accountCatalog.byCode[code].type; renderTable();}
@@ -516,6 +498,7 @@ function renderTable(){
           for(const t of types) sel.appendChild(new Option(t,t));
         }
         sel.value=r.account_type?String(r.account_type).trim():"";
+        if(r.is_total_row) sel.disabled=true;
         sel.addEventListener("change",()=>{
           const type=sel.value; state.rows[idx].account_type=type;
           if(state.accountCatalog?.byType?.[type]){state.rows[idx].account_code=state.accountCatalog.byType[type].code; renderTable();}
@@ -523,7 +506,11 @@ function renderTable(){
         td.appendChild(sel);
       }else{
         const input=document.createElement("input"); input.className="cell-input";
-        input.value=(r[col.key]??"").toString();
+        let displayValue=(r[col.key]??"").toString();
+        if(r.is_total_row && col.key==="item") displayValue="Invoice Total";
+        if(r.is_total_row && (col.key==="qty"||col.key==="unit_cost")) displayValue="";
+        input.value=displayValue;
+        if(r.is_total_row && (col.key==="item"||col.key==="total_amount"||col.key==="invoice_no"||col.key==="invoice_date"||col.key==="company_name")) input.style.fontWeight="800";
         input.addEventListener("input",()=>{state.rows[idx][col.key]=input.value;});
         td.appendChild(input);
       }
@@ -615,12 +602,10 @@ el("btnExtract").addEventListener("click",async()=>{
     if(expected>0) fd.append("expectedCount", String(expected));
 
     const resp=await postWithRetries(API_ENDPOINT,fd,2);
-    const cat=buildAccountCatalogFromResponse(resp);
-    if(cat) state.accountCatalog=cat;
+    state.accountCatalog=null;
+    const cat=buildAccountCatalogFromResponse(resp); if(cat) state.accountCatalog=cat;
 
-    let r=resp?.rows; if(!r && resp?.data?.rows) r=resp.data.rows;
-    if(!r && typeof resp?.text==="string"){try{const p=JSON.parse(resp.text); if(p?.rows) r=p.rows;}catch(e){}}
-    state.rows = Array.isArray(r) ? r.map(x=>ensureAccountAutoFill({...x})) : [];
+    state.rows = normalizeRowsFromResponse(resp);
     renderTable(); setProgress(100);
 
     const got=state.rows.length;
