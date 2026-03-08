@@ -406,6 +406,101 @@ function ensureAccountAutoFill(row){
   return row;
 }
 
+
+function summarizeRowsForPettyCash(rows){
+  if(!Array.isArray(rows) || !rows.length) return [];
+
+  const clean = (v)=>String(v??"").trim();
+  const norm = (v)=>clean(v).replace(/\s+/g," ");
+
+  const pickFirst = (...vals)=>{
+    for(const v of vals){
+      const s = clean(v);
+      if(s) return s;
+    }
+    return "";
+  };
+
+  const toNumber = (v)=>{
+    const s = clean(v).replace(/,/g,"");
+    const m = s.match(/-?\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : NaN;
+  };
+
+  const nonTotalRows = rows.filter(r=>{
+    const item = norm(r.item).toLowerCase();
+    return item !== "__invoice_total__" && item !== "invoice total" && item !== "invc" && item !== "total";
+  });
+
+  const baseRows = nonTotalRows.length ? nonTotalRows : rows;
+  const first = {...baseRows[0]};
+
+  const totalCandidates = rows.map(r=>toNumber(r.total_amount)).filter(x=>!Number.isNaN(x));
+  let totalAmount = "";
+  if(totalCandidates.length){
+    const maxVal = Math.max(...totalCandidates);
+    totalAmount = String(Number.isInteger(maxVal) ? maxVal : maxVal);
+  }else{
+    totalAmount = pickFirst(first.total_amount);
+  }
+
+  const itemNames = [...new Set(baseRows.map(r=>norm(r.item)).filter(Boolean))];
+
+  function inferGroupLabel(items, rows){
+    const hay = (items.join(" ") + " " + rows.map(r=>[
+      r.item,r.category,r.company_name,r.payee
+    ].map(norm).join(" ")).join(" ")).toLowerCase();
+
+    const has = (...words)=>words.some(w=>hay.includes(w));
+    if(has("釘書機","原子筆","間尺","文具","marker","pen","pencil","stapler","staples","stationery","paper","notebook","folder","clip","label","printer paper","a4")){
+      return "文具";
+    }
+    if(has("車費","的士","taxi","uber","transport","travel","mtr","octopus","parking","停車","泊車","隧道","油費","petrol")){
+      return "交通";
+    }
+    if(has("午餐","晚餐","早餐","餐","飲","coffee","cafe","restaurant","food","meal","tea","lunch","dinner","breakfast")){
+      return "餐飲";
+    }
+    if(has("花","盆","植物","園藝","plant","flower","soil","pot","garden","terrace")){
+      return "園藝用品";
+    }
+    if(has("清潔","清洁","detergent","clean","cleaning","tissue","paper towel","soap","bleach")){
+      return "清潔用品";
+    }
+    if(has("醫","药","藥","medical","clinic","doctor","medicine")){
+      return "醫療用品";
+    }
+    if(has("電腦","电脑","滑鼠","mouse","keyboard","usb","ssd","laptop","computer","adapter","cable","monitor")){
+      return "電腦用品";
+    }
+    return "雜項";
+  }
+
+  let itemSummary = "";
+  if(itemNames.length === 1){
+    itemSummary = itemNames[0];
+  }else if(itemNames.length > 1){
+    itemSummary = inferGroupLabel(itemNames, baseRows);
+  }else{
+    itemSummary = pickFirst(first.item, first.category);
+  }
+
+  const summary = {
+    ...first,
+    account_code: pickFirst(first.account_code, first.accountCode, first.code),
+    account_type: pickFirst(first.account_type, first.accountType, first.type),
+    invoice_date: pickFirst(first.invoice_date),
+    invoice_no: pickFirst(first.invoice_no),
+    company_name: pickFirst(first.company_name),
+    category: pickFirst(first.category),
+    item: itemSummary,
+    payee: pickFirst(first.payee),
+    total_amount: totalAmount
+  };
+
+  return [ensureAccountAutoFill(summary)];
+}
+
 /* Render table */
 function renderTable(){
   rebuildHeader();
