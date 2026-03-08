@@ -1,62 +1,11 @@
-[
-  {
-    "code": "11100",
-    "type": "Fixed Assets- Office equipment"
-  },
-  {
-    "code": "55230",
-    "type": "COS - Courier"
-  },
-  {
-    "code": "55240",
-    "type": "COS - Postage"
-  },
-  {
-    "code": "71150",
-    "type": "Computer expenses"
-  },
-  {
-    "code": "71190",
-    "type": "Entertainment"
-  },
-  {
-    "code": "71200",
-    "type": "Insurance"
-  },
-  {
-    "code": "71210",
-    "type": "Legal and professional fees"
-  },
-  {
-    "code": "71230",
-    "type": "Motor vehicle expenses"
-  },
-  {
-    "code": "71240",
-    "type": "Newspaper & magazines"
-  },
-  {
-    "code": "71260",
-    "type": "Printing & stationery"
-  },
-  {
-    "code": "71270",
-    "type": "Repair and maintenance"
-  },
-  {
-    "code": "71330",
-    "type": "Staff welfare"
-  },
-  {
-    "code": "71340",
-    "type": "Sundry expenses"
-  },
-  {
-    "code": "71460",
-    "type": "Medical Expenses"
-  },
-  {
-    "code": "72230",
-    "type": "Travelling - local"
-  }
-]
+{
+  "parking": {"code":"72230","type":"Travelling - lc"},
+  "taxi": {"code":"72230","type":"Travelling - lc"},
+  "uber": {"code":"72230","type":"Travelling - lc"},
+  "restaurant": {"code":"72810","type":"Entertainment"},
+  "lunch": {"code":"72810","type":"Entertainment"},
+  "dinner": {"code":"72810","type":"Entertainment"},
+  "stationery": {"code":"72100","type":"Office Supplies"},
+  "pen": {"code":"72100","type":"Office Supplies"},
+  "paper": {"code":"72100","type":"Office Supplies"}
+}

@@ -1,642 +1,154 @@
-<!doctype html>
-<html lang="zh-HK">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>iWellness Invoice OCR</title>
-  <style>
-    :root{--bg:#f5f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e5e7eb;--orange:#f97316;--green:#16a34a;--shadow:0 10px 30px rgba(15,23,42,.08);--radius:18px;}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"SF Pro Text",Segoe UI,Roboto,Helvetica,Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";color:var(--text);background:linear-gradient(180deg,#fff 0%,var(--bg) 80%);}
-    header{padding:18px 22px 10px;border-bottom:1px solid #eef2f7;background:#fff;position:sticky;top:0;z-index:50}
-    .brand{display:flex;align-items:flex-end;gap:14px}
-    .logo{font-weight:900;letter-spacing:.5px;color:var(--orange);font-size:38px;line-height:1}
-    .title-wrap{display:flex;flex-direction:column;gap:2px}
-    .title{font-weight:800;font-size:20px}
-    .subtitle{color:var(--muted);font-size:13px}
-    .badge{margin-left:auto;display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:#eafff1;color:#0b6b2a;border:1px solid #bff0ce;font-size:12px;font-weight:700}
-    .wrap{max-width:1280px;margin:22px auto;padding:0 18px 26px}
-    .grid{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start}
-    .card{background:var(--card);border:1px solid #eef2f7;border-radius:var(--radius);box-shadow:var(--shadow)}
-    .card h3{margin:0;padding:14px 16px;font-size:16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between}
-    .card .content{padding:14px 16px 16px}
-    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
-    select,input{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;outline:none;background:#fff}
-    input[type="number"]{appearance:textfield}
-    .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .filebox{border:1px dashed #cbd5e1;border-radius:14px;padding:10px 10px 8px;background:#fbfdff}
-    .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.35}
-    .btnrow{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
-    .btn{border:none;border-radius:12px;padding:11px 14px;font-weight:800;cursor:pointer;font-size:14px;box-shadow:0 8px 18px rgba(0,0,0,.08)}
-    .btn.orange{background:var(--orange);color:#fff}
-    .btn.green{background:var(--green);color:#fff}
-    .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--line);box-shadow:none;font-weight:700}
-    .btn:disabled{opacity:.55;cursor:not-allowed}
-    .status{margin-top:12px;padding:10px 12px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.35;white-space:pre-wrap}
-    .status.ok{background:#ecfdf5;border-color:#bbf7d0;color:#065f46}
-    .status.err{background:#fef2f2;border-color:#fecaca;color:#991b1b}
-    .progress{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:10px}
-    .progress>div{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width .2s ease}
-    .filelist{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-    .filechip{border:1px solid #eef2f7;background:#fff;border-radius:14px;padding:10px 10px;cursor:pointer;font-size:12px;color:var(--muted);line-height:1.25}
-    .filechip.active{outline:2px solid rgba(249,115,22,.45);border-color:#fed7aa;color:var(--text)}
-    .filechip b{display:block;color:var(--text);margin-bottom:3px;font-size:12px}
-    .right{display:flex;flex-direction:column;height:calc(100vh - 140px);min-height:560px}
-    .pane{border:1px solid #eef2f7;border-radius:var(--radius);box-shadow:var(--shadow);background:#fff;overflow:hidden}
-    .pane-header{padding:12px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px;font-weight:800}
-    .pane-header small{font-weight:700;color:var(--muted)}
-    .pane-header .meta{margin-left:auto;color:var(--muted);font-weight:700;font-size:12px}
-    .splitter{height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;background:transparent;margin:10px 0;user-select:none}
-    .splitter::before{content:"";width:70px;height:4px;border-radius:999px;background:#d1d5db}
-    .preview-body{position:relative;height:100%;background:linear-gradient(180deg,#fff,#fbfdff)}
-    .preview-toolbar{position:absolute;top:10px;right:12px;display:flex;gap:8px;z-index:3}
-    .toolbtn{border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:7px 10px;cursor:pointer;font-weight:800;font-size:12px;box-shadow:0 8px 18px rgba(0,0,0,.06)}
-    .viewport{position:absolute;inset:14px;border:1px dashed #dbe3ef;border-radius:14px;background:#fff;overflow:hidden}
-    .canvas{position:absolute;left:0;top:0;transform-origin:0 0;cursor:grab;user-select:none}
-    .canvas.dragging{cursor:grabbing}
-    .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:700;font-size:13px}
-    .results-body{height:100%;display:flex;flex-direction:column}
-    .results-hint{padding:10px 14px;color:var(--muted);font-size:12px;border-bottom:1px solid #f1f5f9}
-    .table-wrap{overflow:auto;height:100%}
-    table{width:100%;border-collapse:separate;border-spacing:0;min-width:980px}
-    thead th{position:sticky;top:0;z-index:2;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:left;padding:10px 10px;color:#0f172a;white-space:nowrap}
-    tbody td{border-bottom:1px solid #eef2f7;padding:10px 10px;vertical-align:top;background:#fff}
-    tbody tr:hover td{background:#fcfcff}
-    .cell-input,.cell-select{width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:12px;font-size:13px;background:#fff}
-    .pill{display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:12px;color:var(--muted);margin-left:8px}
-    @media (max-width:980px){.grid{grid-template-columns:1fr}.right{height:auto;min-height:0}.splitter{display:none}.pane{height:auto}table{min-width:860px}}
-  </style>
-  <!-- PDF.js (local-first, CDN fallback) -->
-  <script>
-    (function(){
-      const LOCAL_JS = '/pdfjs/pdf.min.js';
-      const LOCAL_WORKER = '/pdfjs/pdf.worker.min.js';
-      const CDN_JS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js';
-      const CDN_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
+<meta charset="UTF-8">
+<title>iWellness Invoice OCR</title>
 
-      function loadScript(src){
-        return new Promise((resolve,reject)=>{
-          const s=document.createElement('script');
-          s.src=src; s.crossOrigin='anonymous';
-          s.onload=()=>resolve(src);
-          s.onerror=()=>reject(new Error('Failed to load '+src));
-          document.head.appendChild(s);
-        });
-      }
+<script src="pdfjs/pdf.min.js"></script>
 
-      window.__ensurePdfJs = async function(){
-        if(window.pdfjsLib) return {js:'already', worker:(pdfjsLib.GlobalWorkerOptions && pdfjsLib.GlobalWorkerOptions.workerSrc) || ''};
-        try{
-          await loadScript(LOCAL_JS);
-          if(window.pdfjsLib){
-            try{ pdfjsLib.GlobalWorkerOptions.workerSrc = LOCAL_WORKER; }catch(e){}
-            return {js:LOCAL_JS, worker:LOCAL_WORKER};
-          }
-        }catch(e){}
-        // fallback CDN
-        await loadScript(CDN_JS);
-        if(!window.pdfjsLib) throw new Error('PDF.js loaded but pdfjsLib is missing');
-        try{ pdfjsLib.GlobalWorkerOptions.workerSrc = CDN_WORKER; }catch(e){}
-        return {js:CDN_JS, worker:CDN_WORKER};
-      };
-    })();
-  </script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "pdfjs/pdf.worker.min.js";
+</script>
+
+<style>
+body{font-family:Arial;margin:30px;background:#f7f7f7}
+.container{display:flex;gap:20px}
+.panel{background:white;padding:20px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.1)}
+button{padding:10px 15px;border:none;border-radius:6px;background:#ff7a00;color:white;cursor:pointer}
+table{width:100%;border-collapse:collapse;margin-top:20px}
+td,th{border:1px solid #ddd;padding:8px}
+</style>
+
 </head>
+
 <body>
-<header>
-  <div class="brand">
-    <div class="logo">iWellness</div>
-    <div class="title-wrap">
-      <div class="title">Invoice OCR</div>
-      <div class="subtitle">PDF 原生預覽・多張單據・校對／匯出流程</div>
-    </div>
-    <div class="badge">✅ /api/ocr POST → state.rows[]</div>
-  </div>
-</header>
 
-<div class="wrap">
-  <div class="grid">
-    <div class="card">
-      <h3>上傳與設定 <span class="pill">日間工作模式</span></h3>
-      <div class="content">
-        <div class="row2">
-          <div>
-            <label>Invoice 類型</label>
-            <select id="invoiceType">
-              <option value="petty_cash">Petty Cash</option>
-              <option value="purchasing">Purchasing</option>
-            </select>
-          </div>
-          <div>
-            <label>預期 Invoice 張數</label>
-            <input id="expectedCount" type="number" min="1" value="1"/>
-          </div>
-        </div>
+<h2>iWellness Invoice OCR</h2>
 
-        <div style="height:10px"></div>
+<div class="container">
 
-        <div class="filebox">
-          <label>上傳檔案（最多 20 個）</label>
-          <input id="fileInput" type="file" multiple accept=".pdf,image/jpeg,image/png,image/tiff,image/tif"/>
-          <div class="hint">支援：PDF（可多頁）/ JPG / PNG / TIF；點擊左下檔名可切換預覽。</div>
-        </div>
+<div class="panel">
 
-        <div class="btnrow">
-          <button id="btnExtract" class="btn orange">開始抽取（API）</button>
-          <button id="btnAddRow" class="btn ghost">新增一行</button>
-          <button id="btnExport" class="btn green">匯出（CSV）</button>
-        </div>
+<label>Invoice Type</label>
 
-        <div class="progress"><div id="progressBar"></div></div>
-        <div id="statusBox" class="status">尚未開始。</div>
+<select id="mode">
+<option value="petty">Petty Cash</option>
+<option value="purchasing">Purchasing</option>
+</select>
 
-        <div class="filelist" id="fileList"></div>
+<br><br>
 
-        <div class="hint" style="margin-top:12px">
-          ✅ 抽取時會自動 disable 按鈕、顯示進度；遇到 429 / timeout 會自動重試 2 次並顯示詳細錯誤。<br/>
-          ✅ Account Code / Account Type：如 API 有回傳 mapping（來自 Account Code.pdf），會自動填入，且 Code ⇄ Type 永遠對應。
-        </div>
-      </div>
-    </div>
+<input type="file" id="fileInput">
 
-    <div class="right">
-      <div class="pane" id="previewPane" style="flex:0 0 58%;">
-        <div class="pane-header">
-          Invoice Preview <small id="previewName">（未選擇）</small>
-          <div class="meta" id="previewMeta"></div>
-        </div>
-        <div class="preview-body">
-          <div class="preview-toolbar">
-            <button class="toolbtn" id="zoomIn">＋</button>
-            <button class="toolbtn" id="zoomOut">－</button>
-            <button class="toolbtn" id="zoomFit">Fit</button>
-            <button class="toolbtn" id="zoomReset">Reset</button>
-          </div>
-          <div class="viewport" id="viewport">
-            <div class="placeholder" id="previewPlaceholder">請先上傳檔案。</div>
-            <img id="previewImg" class="canvas" alt="preview" style="display:none"/>
-          </div>
-        </div>
-      </div>
+<br><br>
 
-      <div class="splitter" id="splitter" title="拖拉調整 Preview / 抽取結果 高度比例"></div>
+<button onclick="runOCR()">Start OCR</button>
 
-      <div class="pane" id="resultsPane" style="flex:1 1 auto;min-height:220px;">
-        <div class="pane-header">抽取結果（可修改）</div>
-        <div class="results-body">
-          <div class="results-hint">欄位會隨 Invoice 類型切換；你可以直接修改每格，方便校對。</div>
-          <div class="table-wrap" id="tableWrap">
-            <table id="resultTable">
-              <thead><tr id="theadRow"></tr></thead>
-              <tbody id="tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
+</div>
 
-  </div>
+
+<div class="panel">
+
+<h3>OCR Result</h3>
+
+<table id="resultTable">
+
+<thead>
+<tr>
+<th>Account Code</th>
+<th>Account Type</th>
+<th>Invoice Date</th>
+<th>Invoice No</th>
+<th>Company</th>
+<th>Item</th>
+<th>Total</th>
+</tr>
+</thead>
+
+<tbody></tbody>
+
+</table>
+
+</div>
+
 </div>
 
 <script>
 
-const API_ENDPOINT="/api/ocr";
-const MAX_FILES=20;
-// --- PDF support (client-side): convert each PDF page to an image so backend OCR can stay image-based ---
-// Note: Cloudflare Pages Functions cannot easily rasterize PDFs; we do it in-browser via PDF.js.
-// We cap expanded pages to MAX_FILES to match UI constraints.
-function isPDF(file){ return (file && (file.type==="application/pdf" || (file.name||"").toLowerCase().endsWith(".pdf"))); }
-async function pdfToImages(pdfFile){
-  if(typeof __ensurePdfJs==="function"){ await __ensurePdfJs(); }
-  if(typeof pdfjsLib==="undefined"){ throw new Error("PDF.js 未載入，無法預覽/抽取 PDF。"); }
-  // Configure worker
-  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js"; }catch(e){}
-  const ab = await pdfFile.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({data:ab}).promise;
-  const out = [];
-  // Render each page to PNG
-  for(let p=1; p<=pdf.numPages; p++){
-    const page = await pdf.getPage(p);
-    const viewport = page.getViewport({scale: 2.0}); // quality
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d",{alpha:false});
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    await page.render({canvasContext:ctx, viewport}).promise;
-    const blob = await new Promise(res=>canvas.toBlob(res,"image/png",0.92));
-    if(!blob) continue;
-    const name = `${pdfFile.name.replace(/\.pdf$/i,"")}_p${String(p).padStart(2,"0")}.png`;
-    out.push(new File([blob], name, {type:"image/png"}));
-  }
-  return out;
-}
-async function expandPickedFiles(picked){
-  const expanded = [];
-  for(const f of picked){
-    if(isPDF(f)){
-      const imgs = await pdfToImages(f);
-      // If conversion yields 0 pages, treat as error (avoid sending PDF to backend)
-      if(imgs.length===0){ throw new Error("PDF 解析失敗：讀不到任何頁面。"); }
-      expanded.push(...imgs);
-    }else{
-      expanded.push(f);
-    }
-    if(expanded.length>=MAX_FILES) break;
-  }
-  return expanded.slice(0,MAX_FILES);
-}
-const state = {
-  files: [],
-  activeIndex: -1,
-  rows: [],
-  accountCatalog: null,
-};
+let accountCatalog = {}
 
-const el=(id)=>document.getElementById(id);
-function setStatus(msg,kind=""){const b=el("statusBox");b.textContent=msg;b.className="status"+(kind?" "+kind:"");}
-function setProgress(p){el("progressBar").style.width=`${Math.max(0,Math.min(100,p))}%`;}
-function disableActions(d){["btnExtract","btnExport","btnAddRow","invoiceType","expectedCount","fileInput"].forEach(x=>{const n=el(x); if(n) n.disabled=d;});}
+async function loadAccountCatalog(){
 
-/* Preview zoom & pan */
-let zoom=1,tx=0,ty=0,isDragging=false,dragStart=null;
-function applyTransform(){el("previewImg").style.transform=`translate(${tx}px,${ty}px) scale(${zoom})`;}
-function resetView(){zoom=1;tx=0;ty=0;applyTransform();}
-function fitView(){
-  const img=el("previewImg"); if(img.style.display==="none") return;
-  const vp=el("viewport").getBoundingClientRect();
-  const nw=img.naturalWidth||1, nh=img.naturalHeight||1, pad=18;
-  const sc=Math.min((vp.width-pad)/nw,(vp.height-pad)/nh);
-  zoom=Math.max(0.05,Math.min(10,sc));
-  tx=Math.round((vp.width-nw*zoom)/2);
-  ty=Math.round((vp.height-nh*zoom)/2);
-  applyTransform();
-}
-function showPreview(i){
-  state.activeIndex=i; renderFileList();
-  const f=state.files[i]; if(!f) return;
-  el("previewName").textContent=`（${f.name}）`;
-  el("previewMeta").textContent=`${f.type||"file"} · ${Math.round(f.size/1024)} KB`;
-  const img=el("previewImg"), ph=el("previewPlaceholder");
-  if(f.type.startsWith("image/")||/\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name)){
-    const url=URL.createObjectURL(f);
-    img.onload=()=>{ph.style.display="none";img.style.display="block";resetView();fitView();};
-    img.src=url;
-  }else{
-    img.style.display="none";
-    ph.style.display="flex";
-    ph.textContent="PDF 已上傳（可抽取多頁）。如需原生預覽，可加 pdf.js。";
-  }
-}
-el("viewport").addEventListener("mousedown",(e)=>{
-  const img=el("previewImg"); if(img.style.display==="none") return;
-  isDragging=true; img.classList.add("dragging");
-  dragStart={x:e.clientX,y:e.clientY,tx,ty};
-});
-window.addEventListener("mousemove",(e)=>{
-  if(!isDragging||!dragStart) return;
-  tx=dragStart.tx+(e.clientX-dragStart.x);
-  ty=dragStart.ty+(e.clientY-dragStart.y);
-  applyTransform();
-});
-window.addEventListener("mouseup",()=>{isDragging=false;dragStart=null;el("previewImg").classList.remove("dragging");});
-el("zoomIn").addEventListener("click",()=>{zoom=Math.min(10,zoom*1.15);applyTransform();});
-el("zoomOut").addEventListener("click",()=>{zoom=Math.max(0.05,zoom/1.15);applyTransform();});
-el("zoomFit").addEventListener("click",fitView);
-el("zoomReset").addEventListener("click",resetView);
+const res = await fetch("account_codes.json")
+accountCatalog = await res.json()
 
-/* Splitter: preview/results ratio */
-(function(){
-  const splitter=el("splitter"),previewPane=el("previewPane"),right=document.querySelector(".right");
-  let dragging=false;
-  splitter.addEventListener("mousedown",(e)=>{dragging=true;document.body.style.cursor="row-resize";e.preventDefault();});
-  window.addEventListener("mousemove",(e)=>{
-    if(!dragging) return;
-    const r=right.getBoundingClientRect();
-    const y=e.clientY-r.top;
-    const minTop=220,minBottom=220;
-    const clamped=Math.max(minTop,Math.min(r.height-minBottom,y));
-    previewPane.style.flex=`0 0 ${(clamped/r.height)*100}%`;
-  });
-  window.addEventListener("mouseup",()=>{if(!dragging)return;dragging=false;document.body.style.cursor="";});
-})();
-
-/* Table schema */
-function getSchema(){
-  const t=el("invoiceType").value;
-  if(t==="purchasing"){
-    return [
-      {key:"account_code",label:"Account Code",type:"account_code"},
-      {key:"account_type",label:"Account Type",type:"account_type"},
-      {key:"invoice_date",label:"Invoice date",type:"text"},
-      {key:"invoice_no",label:"Invoice no.",type:"text"},
-      {key:"company_name",label:"Company name",type:"text"},
-      {key:"category",label:"Category",type:"text"},
-      {key:"item",label:"Item",type:"text"},
-      {key:"qty",label:"QTY",type:"text"},
-      {key:"unit_cost",label:"Unit cost",type:"text"},
-      {key:"total_amount",label:"Total Amount",type:"text"},
-    ];
-  }
-  return [
-    {key:"account_code",label:"Account Code",type:"account_code"},
-    {key:"account_type",label:"Account Type",type:"account_type"},
-    {key:"invoice_date",label:"Invoice date",type:"text"},
-    {key:"invoice_no",label:"Invoice no.",type:"text"},
-    {key:"company_name",label:"Company name",type:"text"},
-    {key:"category",label:"Category",type:"text"},
-    {key:"item",label:"Item",type:"text"},
-    {key:"payee",label:"Payee",type:"text"},
-    {key:"total_amount",label:"Total Amount",type:"text"},
-  ];
-}
-function rebuildHeader(){
-  const tr=el("theadRow"); tr.innerHTML="";
-  for(const c of getSchema()){const th=document.createElement("th");th.textContent=c.label;tr.appendChild(th);}
 }
 
-/* Account mapping helpers */
-function buildAccountCatalogFromResponse(resp){
-  const cat={byCode:{},byType:{},options:[]};
-  const add=(code,type)=>{
-    if(!code||!type) return;
-    const c=String(code).trim(), t=String(type).trim();
-    cat.byCode[c]={code:c,type:t}; cat.byType[t]={code:c,type:t};
-  };
-  if(resp?.account_catalog?.options?.length){
-    for(const o of resp.account_catalog.options){
-      const code=o.code??o.account_code, type=o.type??o.account_type;
-      add(code,type);
-      // Account Code 下拉選單：只顯示 Code 數字
-      cat.options.push({code:String(code).trim(),type:String(type).trim(),label:String(code).trim()});
-    }
-  }else if(Array.isArray(resp?.account_map)){
-    for(const o of resp.account_map){
-      const code=o.code??o.account_code, type=o.type??o.account_type;
-      add(code,type); cat.options.push({code:String(code).trim(),type:String(type).trim(),label:String(code).trim()});
-    }
-  }else if(resp?.account_map && typeof resp.account_map==="object"){
-    for(const [code,type] of Object.entries(resp.account_map)){
-      add(code,type); cat.options.push({code:String(code).trim(),type:String(type).trim(),label:String(code).trim()});
-    }
-  }else if(resp?.meta?.account_catalog?.options?.length){
-    for(const o of resp.meta.account_catalog.options){
-      const code=o.code??o.account_code, type=o.type??o.account_type;
-      add(code,type); cat.options.push({code:String(code).trim(),type:String(type).trim(),label:String(code).trim()});
-    }
-  }
-  if(!cat.options.length) return null;
-  const seen=new Set();
-  cat.options=cat.options.filter(o=>{const k=o.code+"||"+o.type;if(seen.has(k))return false;seen.add(k);return true;})
-    .sort((a,b)=>a.code.localeCompare(b.code)||a.type.localeCompare(b.type));
-  return cat;
-}
-function ensureAccountAutoFill(row){
-  if(!state.accountCatalog) return row;
-  row.account_code=row.account_code??row.accountCode??row.code??"";
-  row.account_type=row.account_type??row.accountType??row.type??"";
-  if(row.account_code && !row.account_type){
-    const m=state.accountCatalog.byCode[String(row.account_code).trim()]; if(m) row.account_type=m.type;
-  }
-  if(row.account_type && !row.account_code){
-    const m=state.accountCatalog.byType[String(row.account_type).trim()]; if(m) row.account_code=m.code;
-  }
-  if(row.account_code && row.account_type){
-    const m=state.accountCatalog.byCode[String(row.account_code).trim()]; if(m) row.account_type=m.type;
-  }
-  return row;
+function mapAccount(item){
+
+item = item.toLowerCase()
+
+for(const key in accountCatalog){
+
+if(item.includes(key)){
+return accountCatalog[key]
 }
 
-
-function inferPettyCashSummaryItem(rows){
-  const items = [...new Set((rows||[]).map(r => String(r.item||"").trim()).filter(Boolean))];
-  if (!items.length) return "";
-  if (items.length === 1) return items[0];
-  const hay = items.join(' ').toLowerCase();
-  if (/(stapler|pen|pencil|ruler|paper|ink|toner|label|stationery|文具|原子筆|間尺|釘書機|紙)/.test(hay)) return '文具';
-  if (/(parking|taxi|uber|mtr|bus|travel|travelling|交通|泊車|停車|車費|的士)/.test(hay)) return '交通';
-  if (/(coffee|lunch|dinner|meal|restaurant|cafe|餐|飯|茶|飲食)/.test(hay)) return '餐飲';
-  if (/(plant|flower|pot|soil|園藝|花|花泥|盆|雜植)/.test(hay)) return '園藝用品';
-  if (/(repair|maintenance|fix|維修|保養)/.test(hay)) return '維修保養';
-  return items.slice(0,3).join(' / ');
 }
 
-function summarizeRowsForPettyCash(rows){
-  if(!Array.isArray(rows) || !rows.length) return [];
-  const groups = new Map();
-  for(const row of rows){
-    const r = {...row};
-    const key = [
-      String(r.filename||'').trim(),
-      String(r.invoice_no||'').trim(),
-      String(r.company_name||'').trim(),
-      String(r.invoice_date||'').trim()
-    ].join('||');
-    if(!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(r);
-  }
-  const out = [];
-  for(const rs of groups.values()){
-    const first = {...rs[0]};
-    const totals = rs.map(r => String(r.total_amount||'').replace(/,/g,'').trim())
-      .filter(Boolean)
-      .map(v => ({raw:v, num: parseFloat(v)}))
-      .filter(x => !Number.isNaN(x.num));
-    let total = String(first.total_amount||'').trim();
-    if(totals.length){
-      totals.sort((a,b)=>b.num-a.num);
-      total = totals[0].raw;
-    }
-    const merged = {
-      ...first,
-      item: inferPettyCashSummaryItem(rs),
-      payee: first.payee || '',
-      qty: '',
-      unit_cost: '',
-      total_amount: total,
-    };
-    out.push(ensureAccountAutoFill(merged));
-  }
-  return out;
+return {code:"",type:""}
+
 }
 
-/* Render table */
-function renderTable(){
-  rebuildHeader();
-  const schema=getSchema(), tbody=el("tbody"); tbody.innerHTML="";
-  state.rows=state.rows.map(r=>ensureAccountAutoFill({...r}));
-  state.rows.forEach((r,idx)=>{
-    const tr=document.createElement("tr");
-    schema.forEach(col=>{
-      const td=document.createElement("td");
-      if(col.type==="account_code"){
-        const sel=document.createElement("select"); sel.className="cell-select";
-        sel.appendChild(new Option("—",""));
-        if(state.accountCatalog?.options?.length){
-          for(const o of state.accountCatalog.options) sel.appendChild(new Option(o.label,o.code));
-        }
-        sel.value=r.account_code?String(r.account_code).trim():"";
-        sel.addEventListener("change",()=>{
-          const code=sel.value; state.rows[idx].account_code=code;
-          if(state.accountCatalog?.byCode?.[code]){state.rows[idx].account_type=state.accountCatalog.byCode[code].type; renderTable();}
-        });
-        td.appendChild(sel);
-      }else if(col.type==="account_type"){
-        const sel=document.createElement("select"); sel.className="cell-select";
-        sel.appendChild(new Option("—",""));
-        if(state.accountCatalog?.options?.length){
-          const types=[...new Set(state.accountCatalog.options.map(o=>o.type))].sort((a,b)=>a.localeCompare(b));
-          for(const t of types) sel.appendChild(new Option(t,t));
-        }
-        sel.value=r.account_type?String(r.account_type).trim():"";
-        sel.addEventListener("change",()=>{
-          const type=sel.value; state.rows[idx].account_type=type;
-          if(state.accountCatalog?.byType?.[type]){state.rows[idx].account_code=state.accountCatalog.byType[type].code; renderTable();}
-        });
-        td.appendChild(sel);
-      }else{
-        const input=document.createElement("input"); input.className="cell-input";
-        input.value=(r[col.key]??"").toString();
-        input.addEventListener("input",()=>{state.rows[idx][col.key]=input.value;});
-        td.appendChild(input);
-      }
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
+async function runOCR(){
+
+const file = document.getElementById("fileInput").files[0]
+
+if(!file) return
+
+const form = new FormData()
+
+form.append("file",file)
+
+const res = await fetch("/api/ocr",{method:"POST",body:form})
+
+const data = await res.json()
+
+renderRows(data.rows)
+
 }
 
-/* File list */
-function escapeHtml(s){return (s||"").replace(/[&<>\"']/g,c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));}
-function renderFileList(){
-  const list=el("fileList"); list.innerHTML="";
-  state.files.forEach((f,i)=>{
-    const d=document.createElement("div");
-    d.className="filechip"+(i===state.activeIndex?" active":"");
-    d.innerHTML=`<b>${i+1}/${state.files.length}</b>${escapeHtml(f.name)}`;
-    d.addEventListener("click",()=>showPreview(i));
-    list.appendChild(d);
-  });
+function renderRows(rows){
+
+const tbody = document.querySelector("#resultTable tbody")
+
+tbody.innerHTML=""
+
+rows.forEach(r=>{
+
+const acc = mapAccount(r.item||"")
+
+const tr=document.createElement("tr")
+
+tr.innerHTML=`
+<td>${acc.code}</td>
+<td>${acc.type}</td>
+<td>${r.invoice_date||""}</td>
+<td>${r.invoice_no||""}</td>
+<td>${r.company_name||""}</td>
+<td>${r.item||""}</td>
+<td>${r.total_amount||""}</td>
+`
+
+tbody.appendChild(tr)
+
+})
+
 }
 
-/* API + retries */
-async function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-async function postWithRetries(url,fd,maxRetries=2){
-  let last=null;
-  for(let a=0;a<=maxRetries;a++){
-    try{
-      const res=await fetch(url,{method:"POST",body:fd});
-      const text=await res.text();
-      let json=null; try{json=text?JSON.parse(text):null;}catch(e){}
-      if(!res.ok){
-        const msg=json?.message||json?.error||text||res.statusText;
-        const err=new Error(`HTTP ${res.status}: ${msg}`); err.status=res.status; err.body=text; throw err;
-      }
-      return json??{ok:true,text};
-    }catch(err){
-      last=err;
-      const code=err?.status;
-      const retryable=(code===429||code===408||/timeout/i.test(String(err?.message||"")));
-      if(a<maxRetries && retryable){await sleep(600*(a+1));continue;}
-      throw last;
-    }
-  }
-  throw last||new Error("Unknown error");
-}
+loadAccountCatalog()
 
-/* Actions */
-el("fileInput").addEventListener("change", async ()=>{
-  const picked = Array.from(el("fileInput").files || []);
-  if (picked.length > MAX_FILES) {
-    setStatus(`最多只可上傳 ${MAX_FILES} 個檔案。你揀咗 ${picked.length} 個。`, "warn");
-    el("fileInput").value = "";
-    return;
-  }
-  try{
-    setStatus("處理檔案中…", "info");
-    const expanded = await expandPickedFiles(picked);
-    state.files = expanded;
-    state.activeIndex = 0;
-    // auto set expected count when multiple pages/images are uploaded
-    const ecEl = el("expectedCount");
-    const current = parseInt(ecEl.value||"0",10)||0;
-    if(state.files.length>1 && (current===0 || current===1)) ecEl.value = String(state.files.length);
-    state.rows = [];
-    renderFileList();
-    showPreview(0);
-    renderTable();
-    setStatus(`✅ 已載入 ${state.files.length} 個檔案。`, "ok");
-  }catch(err){
-    setStatus("處理檔案失敗：" + (err?.message || String(err)), "err");
-  }
-});
-el("invoiceType").addEventListener("change",()=>renderTable());
-el("btnAddRow").addEventListener("click",()=>{state.rows.push({});renderTable();});
-
-el("btnExtract").addEventListener("click",async()=>{
-  if(!state.files.length){setStatus("請先上傳檔案。","err");return;}
-  disableActions(true); setProgress(4); setStatus("開始抽取…","");
-  const expected=parseInt(el("expectedCount").value||"0",10)||0;
-  const invoiceType=el("invoiceType").value;
-
-  try{
-    setProgress(12);
-    // One request, multi-file (files[]) — simpler + more stable
-    const fd=new FormData();
-    for(const f of state.files){ fd.append("files", f, f.name); }
-    fd.append("invoiceType", invoiceType);
-    if(expected>0) fd.append("expectedCount", String(expected));
-
-    const resp=await postWithRetries(API_ENDPOINT,fd,2);
-    const cat=buildAccountCatalogFromResponse(resp);
-    if(cat) {
-      state.accountCatalog = cat;
-    } else if(!state.accountCatalog) {
-      await loadAccountCatalog();
-    }
-
-    let r=resp?.rows; if(!r && resp?.data?.rows) r=resp.data.rows;
-    if(!r && typeof resp?.text==="string"){try{const p=JSON.parse(resp.text); if(p?.rows) r=p.rows;}catch(e){}}
-    state.rows = Array.isArray(r) ? r.map(x=>ensureAccountAutoFill({...x})) : [];
-    if(invoiceType === 'petty_cash'){
-      state.rows = summarizeRowsForPettyCash(state.rows);
-    }
-    state.rows = state.rows.map(x=>ensureAccountAutoFill({...x}));
-    renderTable(); setProgress(100);
-
-    const got=state.rows.length;
-    if(expected>0 && got!==expected) setStatus(`⚠️ 張數不一致：${got} / ${expected}（你可以繼續手動校對或再補上傳）`,"err");
-    else setStatus(`✅ API 抽取完成：${state.rows.length} 行`,"ok");
-  }catch(err){
-    const msg=String(err?.message||err);
-    const body=err?.body?`
-
-Response:
-${err.body.slice(0,500)}`:"";
-    setStatus(`抽取失敗：${msg}${body}`,"err");
-    setProgress(0);
-  }finally{disableActions(false);}
-});
-
-/* Export CSV with BOM */
-function formatDateYYYYMMDD(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const day=String(d.getDate()).padStart(2,"0");return `${y}${m}${day}`;}
-function csvEscape(v){const s=(v??"").toString();return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}
-el("btnExport").addEventListener("click",()=>{
-  const schema=getSchema();
-  const lines=[schema.map(c=>c.label).join(",")];
-  for(const r0 of state.rows){
-    const r=ensureAccountAutoFill({...r0});
-    lines.push(schema.map(c=>csvEscape(r[c.key]??"")).join(","));
-  }
-  const csv="\uFEFF"+lines.join("\r\n");
-  const fname=`Invoice_${formatDateYYYYMMDD(new Date())}.csv`;
-  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob); a.download=fname;
-  document.body.appendChild(a); a.click(); a.remove();
-});
-
-/* init */
-rebuildHeader(); renderTable();
 </script>
+
 </body>
 </html>
